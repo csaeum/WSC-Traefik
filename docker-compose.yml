@@ -1,9 +1,15 @@
 version: "3.3"
 
+volumes:
+  letsencrypt-data:
+    driver: local-persist
+    driver_opts:
+      mountpoint: ${CONTAINERVOLUMES}/letsencrypt
+
 services:
   traefik:
     image: "traefik:v2.3"
-    container_name: Traefik
+    container_name: ${COMPOSE_PROJECT_NAME}
     command:
       - "--api=true"
       - "--api.dashboard=true"
@@ -16,46 +22,36 @@ services:
       - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.myresolver.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
-      - "--certificatesresolvers.myresolver.acme.email=yourE-Mail@domain.example"
-      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
-
+      - "--certificatesresolvers.myresolver.acme.email=${LETSENCRYPT_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/${COMPOSE_PROJECT_NAME}.json"
     ports:
       - "80:80"
       - "443:443"
-
     volumes:
-      - "./letsencrypt:/letsencrypt"
+      - letsencrypt-data:/letsencrypt
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-
     networks:
-      - "traefik_proxy"
+      - "${PROXY_NETWORK}"
       - "default"
-
     labels:
-      traefik.enable: true
-
+      - traefik.enable=true
       # Routers
-      traefik.http.routers.traefik.rule: Host(`traefik.domain.example`)
-      traefik.http.routers.traefik.entrypoints: websecure
-      traefik.http.routers.traefik.service: api@internal
-      traefik.http.routers.traefik.tls.certresolver: myresolver
-      traefik.http.routers.traefik.middlewares: traefik-auth
-
-      # global redirect to https
-      traefik.http.routers.http-catchall.rule: hostregexp(`{host:.+}`)
-      traefik.http.routers.http-catchall.entrypoints: web
-      traefik.http.routers.http-catchall.middlewares: redirect-to-https
-
-      # Middleware
-      traefik.http.middlewares.traefik-auth.basicauth.removeheader: true
-      traefik.http.middlewares.traefik-auth.basicauth.users: user:Password
-
-      # middleware redirect
-      traefik.http.middlewares.redirect-to-https.redirectscheme.scheme: https
+      - traefik.http.routers.http-catchall.entrypoints=web
+      - traefik.http.routers.http-catchall.middlewares=redirect-to-https
+      - traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=${HOSTRULE}
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.entrypoints=websecure
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.service=api@internal
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.tls.certresolver=myresolver
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.middlewares=${COMPOSE_PROJECT_NAME}_Auth
+      - traefik.http.middlewares.${COMPOSE_PROJECT_NAME}_Auth.basicauth.removeheader=true
+      # Passwort beachten - $ muss mit einen 2ten $ versehen werden
+      - traefik.http.middlewares.${COMPOSE_PROJECT_NAME}_Auth.basicauth.users=User:Passwort
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
 
 networks:
   traefik_proxy:
     external:
-      name: traefik_proxy
+      name: ${PROXY_NETWORK}
   default:
     driver: bridge
